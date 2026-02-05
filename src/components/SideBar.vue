@@ -53,7 +53,10 @@
 <script>
 export default {
   name: 'SideBar',
-  props: { isCollapsed: Boolean, currentThreadId: String },
+  props: { 
+    isCollapsed: Boolean, 
+    currentThreadId: String 
+  },
   data() {
     return {
       openMenuId: null,
@@ -70,6 +73,7 @@ export default {
   computed: {
     activeId() {
       if (this.historyItems.some(item => item.id === this.currentThreadId)) return this.currentThreadId;
+      // 如果是新创建的 thread 但还没存入数据库，也高亮“新建任务”
       if (this.currentThreadId && this.currentThreadId.startsWith('thread_')) return 'f0';
       return null;
     }
@@ -78,20 +82,34 @@ export default {
     this.fetchThreads();
     document.addEventListener('click', this.closeMenu);
   },
-  beforeDestroy() { document.removeEventListener('click', this.closeMenu); },
+  beforeDestroy() { 
+    document.removeEventListener('click', this.closeMenu); 
+  },
   methods: {
     async fetchThreads() {
       try {
         const res = await fetch('http://localhost:8000/threads');
         if (res.ok) {
           const data = await res.json();
-          this.historyItems = data.map(t => ({ id: t.thread_id, name: t.title }));
+          // 【核心修复】后端返回格式是 { "threads": ["id1", "id2"] }
+          // 我们将字符串数组转换为对象数组供模板渲染
+          if (data && data.threads) {
+            this.historyItems = data.threads.map(id => ({
+              id: id,
+              name: id // 暂时用 ID 作为名称展示
+            }));
+          }
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error("获取线程列表失败:", e); 
+      }
     },
-    handleHistoryClick(item) { this.$emit('select-chat', item.id); },
+    handleHistoryClick(item) { 
+      this.$emit('select-chat', item.id); 
+    },
     handleFixedClick(index) {
       if (index === 0) {
+        // 新建任务：生成临时 ID 并通知父组件
         const newId = 'thread_' + Date.now();
         this.$emit('select-chat', newId);
       }
@@ -112,6 +130,7 @@ export default {
       this.cancelEdit();
     },
     async handleDelete(id) {
+      if (!confirm("确定要删除此对话吗？")) return;
       try {
         await fetch(`http://localhost:8000/threads/${id}`, { method: 'DELETE' });
         this.historyItems = this.historyItems.filter(item => item.id !== id);
@@ -119,8 +138,12 @@ export default {
       } catch (e) { console.error(e); }
       this.closeMenu();
     },
-    toggleMenu(id) { this.openMenuId = this.openMenuId === id ? null : id; },
-    closeMenu() { this.openMenuId = null; },
+    toggleMenu(id) { 
+      this.openMenuId = this.openMenuId === id ? null : id; 
+    },
+    closeMenu() { 
+      this.openMenuId = null; 
+    },
     handleRename(item) {
       this.closeMenu();
       this.editingId = item.id;
@@ -130,13 +153,15 @@ export default {
         if (input && input[0]) input[0].focus();
       });
     },
-    cancelEdit() { this.editingId = null; this.editName = ''; }
+    cancelEdit() { 
+      this.editingId = null; 
+      this.editName = ''; 
+    }
   }
 }
 </script>
 
 <style scoped>
-/* 样式省略，与之前代码保持一致 */
 .sidebar-container { width: 300px; height: 100vh; background: #ebebeb; display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; transition: width 0.3s ease; overflow: hidden; }
 .sidebar-container.collapsed { width: 64px; }
 .sidebar-header { height: 56px; display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; box-sizing: border-box; }
@@ -155,6 +180,6 @@ export default {
 .menu-option { padding: 6px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; }
 .menu-option:hover { background: #f5f5f5; }
 .menu-option.delete span { color: #ff4d4f; }
-.divider { width: 260px; height: 1px; background: rgba(0,0,0,0.05); margin: 12px 0; }
-.history-list { width: 100%; overflow-y: auto; }
+.divider { width: 260px; height: 1px; background: rgba(0,0,0,0.1); margin: 12px 0; }
+.history-list { width: 100%; overflow-y: auto; flex: 1; }
 </style>

@@ -6,7 +6,12 @@
       <div class="messages-wrapper">
         <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.role]">
           <div class="message-content" v-if="msg.content">
-            <span style="white-space: pre-wrap;">{{ msg.content }}</span>
+            <div 
+              v-if="msg.role === 'ai'" 
+              class="markdown-body" 
+              v-html="renderMarkdown(msg.content)"
+            ></div>
+            <span v-else style="white-space: pre-wrap;">{{ msg.content }}</span>
           </div>
         </div>
         
@@ -37,6 +42,30 @@
 </template>
 
 <script>
+// 1. 引入必要的库
+import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
+import MarkdownIt from 'markdown-it';
+// 2. 引入代码高亮样式（这里使用 GitHub 风格，你也可以换成 monokai-sublime 等）
+import 'highlight.js/styles/github.css';
+
+// 3. 初始化 markdown-it 并配置代码高亮
+const md = new MarkdownIt({
+  html: true,        // 允许 HTML 标签
+  linkify: true,     // 自动转换链接
+  typographer: true,
+  highlight: function (str, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return '<pre class="hljs"><code>' +
+               hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
+               '</code></pre>';
+      } catch (__) { console.error(__); }
+    }
+    return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
+  }
+});
+
 export default {
   props: {
     threadId: { type: String, required: true }
@@ -59,6 +88,12 @@ export default {
     }
   },
   methods: {
+    // 4. 渲染 Markdown 的方法
+    renderMarkdown(content) {
+      if (!content) return '';
+      const rawHtml = md.render(content);
+      return DOMPurify.sanitize(rawHtml); // 安全过滤
+    },
     async fetchHistory(id) {
       this.isLoadingHistory = true;
       this.messages = [];
@@ -102,7 +137,6 @@ export default {
         const decoder = new TextDecoder();
         let buffer = '';
         
-        // 关键修复点：增加 eslint 忽略注释，防止编译报错
         /* eslint-disable-next-line no-constant-condition */
         while (true) {
           const { done, value } = await reader.read();
@@ -149,7 +183,7 @@ export default {
 </script>
 
 <style scoped>
-/* 保持原有样式不变 */
+/* 保持原有布局样式 */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
@@ -165,6 +199,35 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
 .user .message-content { max-width: 85%; background: #f0f0f0; color: #333; padding: 12px 18px; border-radius: 18px; }
 .message.ai { justify-content: center; } 
 .ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; line-height: 1.6; font-size: 15px; }
+
+/* 新增 Markdown 内部元素样式调整 */
+.markdown-body {
+  word-break: break-word;
+}
+.markdown-body >>> p { margin: 0 0 10px 0; }
+.markdown-body >>> p:last-child { margin-bottom: 0; }
+.markdown-body >>> code { 
+  background-color: rgba(175, 184, 193, 0.2); 
+  padding: 0.2em 0.4em; 
+  border-radius: 6px; 
+  font-family: monospace;
+}
+.markdown-body >>> pre code { 
+  background-color: transparent; 
+  padding: 0; 
+}
+.markdown-body >>> .hljs {
+  padding: 12px;
+  border-radius: 8px;
+  margin: 10px 0;
+  overflow-x: auto;
+  background: #f6f8fa;
+}
+.markdown-body >>> ul, .markdown-body >>> ol {
+  padding-left: 2em;
+  margin-bottom: 10px;
+}
+
 .agent-status { align-self: center; background: rgba(232, 245, 233, 0.9); color: #2e7d32; padding: 6px 14px; border-radius: 20px; font-size: 12px; margin-bottom: 20px; display: flex; align-items: center; }
 .status-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; margin-right: 8px; }
 .loading-tip { text-align: center; color: #bbb; font-size: 13px; padding: 20px; }
