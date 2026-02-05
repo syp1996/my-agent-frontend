@@ -87,23 +87,20 @@ export default {
   },
   methods: {
     async fetchThreads() {
-      try {
-        const res = await fetch('http://localhost:8000/threads');
-        if (res.ok) {
-          const data = await res.json();
-          // 【核心修复】后端返回格式是 { "threads": ["id1", "id2"] }
-          // 我们将字符串数组转换为对象数组供模板渲染
-          if (data && data.threads) {
-            this.historyItems = data.threads.map(id => ({
-              id: id,
-              name: id // 暂时用 ID 作为名称展示
-            }));
-          }
-        }
-      } catch (e) { 
-        console.error("获取线程列表失败:", e); 
-      }
-    },
+  try {
+    const res = await fetch('http://localhost:8000/threads');
+    if (res.ok) {
+      const data = await res.json();
+      // 后端现在返回 [{"thread_id": "...", "title": "..."}, ...]
+      this.historyItems = data.map(t => ({
+        id: t.thread_id,
+        name: t.title // 直接映射标题
+      }));
+    }
+  } catch (e) {
+    console.error("加载侧边栏失败:", e);
+  }
+},
     handleHistoryClick(item) { 
       this.$emit('select-chat', item.id); 
     },
