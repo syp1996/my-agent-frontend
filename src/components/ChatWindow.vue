@@ -5,6 +5,10 @@
     <div class="chat-box" ref="chatBox">
       <div class="messages-wrapper">
         <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.role]">
+          <div v-if="msg.role === 'ai'" class="ai-label-container">
+            <span class="ai-label">Agent</span>
+          </div>
+
           <div class="message-content" v-if="msg.content">
             <div 
               v-if="msg.role === 'ai'" 
@@ -113,19 +117,15 @@ export default {
     },
     async sendMessage() {
       if (!this.userInput || this.isStreaming) return;
-
-      const isFirstMessage = this.messages.length === 0; // 记录是否是首条消息
+      const isFirstMessage = this.messages.length === 0;
       const query = this.userInput;
-      
       this.messages.push({ role: 'user', content: query });
       this.userInput = ''; 
       this.isStreaming = true;
       this.currentAgent = 'Supervisor (调度中)';
-      
       const aiMessage = { role: 'ai', content: '' };
       this.messages.push(aiMessage);
       this.scrollToBottom();
-
       try {
         const response = await fetch('http://localhost:8000/chat/stream', {
           method: 'POST',
@@ -135,7 +135,6 @@ export default {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        
         while (this.isStreaming) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -165,15 +164,11 @@ export default {
             }
           }
         }
-      } catch (error) { 
-        aiMessage.content += "\n[连接失败]"; 
-      } finally { 
+      } catch (error) { aiMessage.content += "\n[连接失败]"; }
+      finally { 
         this.isStreaming = false; 
         this.currentAgent = ''; 
-        // 关键：只有在输出完全结束后，如果是第一条消息，才通知父组件刷新侧边栏
-        if (isFirstMessage) {
-          this.$emit('first-message-sent');
-        }
+        if (isFirstMessage) this.$emit('first-message-sent');
       }
     },
     scrollToBottom() {
@@ -189,7 +184,6 @@ export default {
 </script>
 
 <style scoped>
-/* 保持原有样式不变 */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
@@ -200,11 +194,50 @@ export default {
 .custom-input-box { position: relative; width: 100%; height: 164px; background: #ffffff; border-radius: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 20px; box-sizing: border-box; outline: none; }
 textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; resize: none; font-size: 16px; font-family: 'PingFang SC', sans-serif; color: #333; background: transparent; box-shadow: none; }
 .play-icon { position: absolute; bottom: 20px; right: 20px; width: 24px; height: 24px; cursor: pointer; }
+
 .message { margin-bottom: 24px; display: flex; width: 100%; }
 .message.user { justify-content: flex-end; }
 .user .message-content { max-width: 85%; background: #f0f0f0; color: #333; padding: 12px 18px; border-radius: 18px; }
-.message.ai { justify-content: center; } 
-.ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; line-height: 1.6; font-size: 15px; }
+
+/* AI 消息样式 */
+.message.ai { flex-direction: column; align-items: flex-start; } 
+
+.ai .message-content { 
+  width: 100%; 
+  max-width: 100%; 
+  background: #fff; 
+  border: 1px solid #f0f0f0; 
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02); 
+  padding: 12px 18px; 
+  border-radius: 18px; 
+  border-top-left-radius: 0; /* 去掉左上圆角，使其与标签左侧对齐并连接 */
+  line-height: 1.6; 
+  font-size: 15px; 
+  box-sizing: border-box;
+}
+
+/* AI 标签容器：对齐容器边缘 */
+.ai-label-container {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  padding-left: 0; /* 修改：设为 0 以对齐 message-content 容器的左边缘 */
+  box-sizing: border-box;
+  margin-bottom: -1px; /* 负边距让标签边框与气泡边框重合，视觉更统一 */
+  position: relative;
+  z-index: 2;
+}
+
+.ai-label {
+  color: #666;
+  font-size: 14px;
+  padding: 12px 12px;
+  border-radius: 8px 8px 0 0;
+  border-bottom: none;
+  font-weight: 500;
+}
+
+/* Markdown 样式 */
 .markdown-body { word-break: break-word; }
 .markdown-body >>> p { margin: 0 0 10px 0; }
 .markdown-body >>> p:last-child { margin-bottom: 0; }
@@ -212,6 +245,7 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
 .markdown-body >>> pre code { background-color: transparent; padding: 0; }
 .markdown-body >>> .hljs { padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; background: #f6f8fa; }
 .markdown-body >>> ul, .markdown-body >>> ol { padding-left: 2em; margin-bottom: 10px; }
+
 .agent-status { align-self: center; background: rgba(232, 245, 233, 0.9); color: #2e7d32; padding: 6px 14px; border-radius: 20px; font-size: 12px; margin-bottom: 20px; display: flex; align-items: center; }
 .status-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; margin-right: 8px; }
 .loading-tip { text-align: center; color: #bbb; font-size: 13px; padding: 20px; }
