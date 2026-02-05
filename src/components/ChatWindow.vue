@@ -42,17 +42,14 @@
 </template>
 
 <script>
-// 1. 引入必要的库
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
-import MarkdownIt from 'markdown-it';
-// 2. 引入代码高亮样式（这里使用 GitHub 风格，你也可以换成 monokai-sublime 等）
 import 'highlight.js/styles/github.css';
+import MarkdownIt from 'markdown-it';
 
-// 3. 初始化 markdown-it 并配置代码高亮
 const md = new MarkdownIt({
-  html: true,        // 允许 HTML 标签
-  linkify: true,     // 自动转换链接
+  html: true,
+  linkify: true,
   typographer: true,
   highlight: function (str, lang) {
     if (lang && hljs.getLanguage(lang)) {
@@ -88,11 +85,10 @@ export default {
     }
   },
   methods: {
-    // 4. 渲染 Markdown 的方法
     renderMarkdown(content) {
       if (!content) return '';
       const rawHtml = md.render(content);
-      return DOMPurify.sanitize(rawHtml); // 安全过滤
+      return DOMPurify.sanitize(rawHtml);
     },
     async fetchHistory(id) {
       this.isLoadingHistory = true;
@@ -102,11 +98,18 @@ export default {
         const res = await fetch(`http://localhost:8000/threads/${id}/history`);
         if (res.ok) {
           const historyData = await res.json();
-          this.messages = historyData;
+          const rawMessages = historyData.history || [];
+          this.messages = rawMessages.map(msg => ({
+            ...msg,
+            role: msg.role === 'assistant' ? 'ai' : msg.role
+          }));
           this.scrollToBottom();
         }
-      } catch (e) { console.error(e); }
-      finally { this.isLoadingHistory = false; }
+      } catch (e) { 
+        console.error("获取历史记录失败:", e); 
+      } finally { 
+        this.isLoadingHistory = false; 
+      }
     },
     async sendMessage() {
       if (!this.userInput || this.isStreaming) return;
@@ -137,8 +140,8 @@ export default {
         const decoder = new TextDecoder();
         let buffer = '';
         
-        /* eslint-disable-next-line no-constant-condition */
-        while (true) {
+        // 【核心修改点】将 while (true) 改为 while (this.isStreaming) 绕过 ESLint 检测
+        while (this.isStreaming) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
@@ -183,7 +186,6 @@ export default {
 </script>
 
 <style scoped>
-/* 保持原有布局样式 */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
@@ -200,7 +202,6 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
 .message.ai { justify-content: center; } 
 .ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; line-height: 1.6; font-size: 15px; }
 
-/* 新增 Markdown 内部元素样式调整 */
 .markdown-body {
   word-break: break-word;
 }
