@@ -1,7 +1,9 @@
 <template>
   <div id="app">
     <SideBar 
+      ref="sidebar" 
       :is-collapsed="isCollapsed" 
+      :current-thread-id="currentThreadId"
       @toggle="isCollapsed = !isCollapsed" 
       @select-chat="updateCurrentThread" 
     />
@@ -10,6 +12,7 @@
       <ChatWindow 
         :key="currentThreadId" 
         :thread-id="currentThreadId" 
+        @first-message-sent="refreshSidebar"
       />
     </div>
   </div>
@@ -31,6 +34,13 @@ export default {
   methods: {
     updateCurrentThread(id) {
       this.currentThreadId = id;
+    },
+    refreshSidebar() {
+      setTimeout(() => {
+        if (this.$refs.sidebar) {
+          this.$refs.sidebar.fetchThreads();
+        }
+      }, 500); 
     }
   }
 }
@@ -39,12 +49,5 @@ export default {
 <style>
 html, body { margin: 0; padding: 0; height: 100%; background: #f8f8f7; overflow: hidden; }
 #app { display: flex; height: 100vh; font-family: 'PingFang SC', Arial, sans-serif; }
-.main-content { 
-  flex: 1; 
-  height: 100%; 
-  overflow: hidden; 
-  transition: all 0.3s ease; 
-  display: flex; 
-  flex-direction: column; 
-}
+.main-content { flex: 1; height: 100%; overflow: hidden; transition: all 0.3s ease; display: flex; flex-direction: column; }
 </style>

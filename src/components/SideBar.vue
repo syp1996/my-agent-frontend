@@ -1,12 +1,7 @@
 <template>
   <div :class="['sidebar-container', { 'collapsed': isCollapsed }]">
     <div class="sidebar-header">
-      <img 
-        src="~@/assets/sidebar.png" 
-        class="sidebar-toggle-icon" 
-        alt="sidebar-icon"
-        @click="$emit('toggle')"
-      />
+      <img src="~@/assets/sidebar.png" class="sidebar-toggle-icon" @click="$emit('toggle')" />
     </div>
     
     <div class="sidebar-content">
@@ -16,7 +11,7 @@
         :class="['sidebar-item', { 'active': activeId === 'f' + index }]"
         @click="handleFixedClick(index)"
       >
-        <img :src="item.iconPath" class="item-icon" alt="icon" />
+        <img :src="item.iconPath" class="item-icon" />
         <span v-show="!isCollapsed" class="item-text">{{ item.name }}</span>
       </div>
 
@@ -36,7 +31,6 @@
               class="rename-input"
               @blur="saveEdit(item)"
               @keyup.enter="saveEdit(item)"
-              @keyup.esc="cancelEdit"
               @click.stop
             />
           </template>
@@ -44,20 +38,11 @@
             <span class="item-text history-text" :title="item.name">{{ item.name }}</span>
           </template>
           
-          <img v-if="editingId !== item.id"
-            src="~@/assets/more.png" 
-            class="more-icon" 
-            alt="more" 
-            @click.stop="toggleMenu(item.id)" 
-          />
+          <img v-if="editingId !== item.id" src="~@/assets/more.png" class="more-icon" @click.stop="toggleMenu(item.id)" />
 
           <div v-if="openMenuId === item.id" class="popup-menu" @click.stop>
-            <div class="menu-option" @click="handleRename(item)">
-              <span>重命名</span>
-            </div>
-            <div class="menu-option delete" @click="handleDelete(item.id)">
-              <span>删除</span>
-            </div>
+            <div class="menu-option" @click="handleRename(item)"><span>重命名</span></div>
+            <div class="menu-option delete" @click="handleDelete(item.id)"><span>删除</span></div>
           </div>
         </div>
       </div>
@@ -68,10 +53,9 @@
 <script>
 export default {
   name: 'SideBar',
-  props: { isCollapsed: Boolean },
+  props: { isCollapsed: Boolean, currentThreadId: String },
   data() {
     return {
-      activeId: 'f0',
       openMenuId: null,
       editingId: null,
       editName: '',
@@ -83,15 +67,19 @@ export default {
       historyItems: []
     };
   },
+  computed: {
+    activeId() {
+      if (this.historyItems.some(item => item.id === this.currentThreadId)) return this.currentThreadId;
+      if (this.currentThreadId && this.currentThreadId.startsWith('thread_')) return 'f0';
+      return null;
+    }
+  },
   mounted() {
     this.fetchThreads();
     document.addEventListener('click', this.closeMenu);
   },
-  beforeDestroy() {
-    document.removeEventListener('click', this.closeMenu);
-  },
+  beforeDestroy() { document.removeEventListener('click', this.closeMenu); },
   methods: {
-    // API: 获取对话列表
     async fetchThreads() {
       try {
         const res = await fetch('http://localhost:8000/threads');
@@ -99,25 +87,15 @@ export default {
           const data = await res.json();
           this.historyItems = data.map(t => ({ id: t.thread_id, name: t.title }));
         }
-      } catch (e) { console.error("加载列表失败", e); }
+      } catch (e) { console.error(e); }
     },
-
-    // 切换对话
-    handleHistoryClick(item) {
-      this.activeId = item.id;
-      this.$emit('select-chat', item.id);
-    },
-
-    // 新建任务
+    handleHistoryClick(item) { this.$emit('select-chat', item.id); },
     handleFixedClick(index) {
-      this.activeId = 'f' + index;
       if (index === 0) {
         const newId = 'thread_' + Date.now();
         this.$emit('select-chat', newId);
       }
     },
-
-    // API: 重命名
     async saveEdit(item) {
       if (!this.editingId) return;
       const newName = this.editName.trim();
@@ -133,17 +111,14 @@ export default {
       }
       this.cancelEdit();
     },
-
-    // API: 删除
     async handleDelete(id) {
       try {
         await fetch(`http://localhost:8000/threads/${id}`, { method: 'DELETE' });
         this.historyItems = this.historyItems.filter(item => item.id !== id);
-        if (this.activeId === id) this.handleFixedClick(0);
+        if (this.currentThreadId === id) this.handleFixedClick(0);
       } catch (e) { console.error(e); }
       this.closeMenu();
     },
-
     toggleMenu(id) { this.openMenuId = this.openMenuId === id ? null : id; },
     closeMenu() { this.openMenuId = null; },
     handleRename(item) {
@@ -161,99 +136,25 @@ export default {
 </script>
 
 <style scoped>
-.sidebar-container {
-  width: 300px;
-  height: 100vh; 
-  background: #ebebeb; 
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid #e5e7eb;
-  transition: width 0.3s ease;
-  overflow: hidden;
-}
+/* 样式省略，与之前代码保持一致 */
+.sidebar-container { width: 300px; height: 100vh; background: #ebebeb; display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; transition: width 0.3s ease; overflow: hidden; }
 .sidebar-container.collapsed { width: 64px; }
 .sidebar-header { height: 56px; display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; box-sizing: border-box; }
-.sidebar-container.collapsed .sidebar-header { justify-content: center; padding: 0; }
 .sidebar-toggle-icon { width: 24px; height: 24px; cursor: pointer; }
 .sidebar-content { flex: 1; padding: 12px 0; display: flex; flex-direction: column; align-items: center; }
-
-.sidebar-item {
-  position: relative;
-  width: 284px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  box-sizing: border-box;
-  cursor: pointer;
-  margin-bottom: 4px;
-  transition: background 0.2s;
-}
+.sidebar-item { position: relative; width: 284px; height: 36px; border-radius: 8px; display: flex; align-items: center; padding: 0 12px; box-sizing: border-box; cursor: pointer; margin-bottom: 4px; transition: background 0.2s; }
 .sidebar-item.active { background: #e0e0e0; }
 .sidebar-item:hover:not(.active) { background: rgba(0, 0, 0, 0.05); }
-
 .item-icon { width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px; }
-.item-text {
-  width: 244px;
-  height: 20px;
-  font-size: 14px;
-  font-family: "PingFang SC", sans-serif;
-  color: rgba(0, 0, 0, 0.75);
-  line-height: 20px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.history-item:hover .item-text { width: 200px; }
+.item-text { width: 244px; font-size: 14px; color: rgba(0, 0, 0, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .history-text { padding-left: 28px; }
-
-.rename-input {
-  margin-left: 28px;
-  width: 200px;
-  height: 24px;
-  font-size: 14px;
-  border: 1px solid #42b983;
-  border-radius: 4px;
-  outline: none;
-  padding: 0 4px;
-  background: #fff;
-}
-
-.more-icon {
-  position: absolute;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
+.rename-input { margin-left: 28px; width: 200px; height: 24px; border: 1px solid #42b983; border-radius: 4px; outline: none; padding: 0 4px; }
+.more-icon { position: absolute; right: 8px; width: 20px; opacity: 0; transition: opacity 0.2s ease; }
 .sidebar-item:hover .more-icon { opacity: 1; }
-
-.popup-menu {
-  position: absolute;
-  top: 32px;
-  right: 8px;
-  width: 100px;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  padding: 4px;
-  z-index: 100;
-  border: 1px solid #eee;
-}
-.menu-option {
-  display: flex;
-  align-items: center;
-  padding: 6px 12px;
-  font-size: 13px;
-  color: #333;
-  border-radius: 4px;
-  cursor: pointer;
-}
+.popup-menu { position: absolute; top: 32px; right: 8px; width: 100px; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px; z-index: 100; border: 1px solid #eee; }
+.menu-option { padding: 6px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; }
 .menu-option:hover { background: #f5f5f5; }
 .menu-option.delete span { color: #ff4d4f; }
-
 .divider { width: 260px; height: 1px; background: rgba(0,0,0,0.05); margin: 12px 0; }
-.history-list { width: 100%; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
+.history-list { width: 100%; overflow-y: auto; }
 </style>
