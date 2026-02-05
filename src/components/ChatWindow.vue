@@ -114,7 +114,7 @@ export default {
     async sendMessage() {
       if (!this.userInput || this.isStreaming) return;
 
-      const isFirstMessage = this.messages.length === 0;
+      const isFirstMessage = this.messages.length === 0; // 记录是否是首条消息
       const query = this.userInput;
       
       this.messages.push({ role: 'user', content: query });
@@ -126,10 +126,6 @@ export default {
       this.messages.push(aiMessage);
       this.scrollToBottom();
 
-      if (isFirstMessage) {
-        this.$emit('first-message-sent');
-      }
-
       try {
         const response = await fetch('http://localhost:8000/chat/stream', {
           method: 'POST',
@@ -140,7 +136,6 @@ export default {
         const decoder = new TextDecoder();
         let buffer = '';
         
-        // 【核心修改点】将 while (true) 改为 while (this.isStreaming) 绕过 ESLint 检测
         while (this.isStreaming) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -170,8 +165,16 @@ export default {
             }
           }
         }
-      } catch (error) { aiMessage.content += "\n[连接失败]"; }
-      finally { this.isStreaming = false; this.currentAgent = ''; }
+      } catch (error) { 
+        aiMessage.content += "\n[连接失败]"; 
+      } finally { 
+        this.isStreaming = false; 
+        this.currentAgent = ''; 
+        // 关键：只有在输出完全结束后，如果是第一条消息，才通知父组件刷新侧边栏
+        if (isFirstMessage) {
+          this.$emit('first-message-sent');
+        }
+      }
     },
     scrollToBottom() {
       this.$nextTick(() => {
@@ -186,6 +189,7 @@ export default {
 </script>
 
 <style scoped>
+/* 保持原有样式不变 */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
@@ -201,34 +205,13 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
 .user .message-content { max-width: 85%; background: #f0f0f0; color: #333; padding: 12px 18px; border-radius: 18px; }
 .message.ai { justify-content: center; } 
 .ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; line-height: 1.6; font-size: 15px; }
-
-.markdown-body {
-  word-break: break-word;
-}
+.markdown-body { word-break: break-word; }
 .markdown-body >>> p { margin: 0 0 10px 0; }
 .markdown-body >>> p:last-child { margin-bottom: 0; }
-.markdown-body >>> code { 
-  background-color: rgba(175, 184, 193, 0.2); 
-  padding: 0.2em 0.4em; 
-  border-radius: 6px; 
-  font-family: monospace;
-}
-.markdown-body >>> pre code { 
-  background-color: transparent; 
-  padding: 0; 
-}
-.markdown-body >>> .hljs {
-  padding: 12px;
-  border-radius: 8px;
-  margin: 10px 0;
-  overflow-x: auto;
-  background: #f6f8fa;
-}
-.markdown-body >>> ul, .markdown-body >>> ol {
-  padding-left: 2em;
-  margin-bottom: 10px;
-}
-
+.markdown-body >>> code { background-color: rgba(175, 184, 193, 0.2); padding: 0.2em 0.4em; border-radius: 6px; font-family: monospace; }
+.markdown-body >>> pre code { background-color: transparent; padding: 0; }
+.markdown-body >>> .hljs { padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; background: #f6f8fa; }
+.markdown-body >>> ul, .markdown-body >>> ol { padding-left: 2em; margin-bottom: 10px; }
 .agent-status { align-self: center; background: rgba(232, 245, 233, 0.9); color: #2e7d32; padding: 6px 14px; border-radius: 20px; font-size: 12px; margin-bottom: 20px; display: flex; align-items: center; }
 .status-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; margin-right: 8px; }
 .loading-tip { text-align: center; color: #bbb; font-size: 13px; padding: 20px; }

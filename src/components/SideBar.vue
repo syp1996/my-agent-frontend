@@ -73,7 +73,6 @@ export default {
   computed: {
     activeId() {
       if (this.historyItems.some(item => item.id === this.currentThreadId)) return this.currentThreadId;
-      // 如果是新创建的 thread 但还没存入数据库，也高亮“新建任务”
       if (this.currentThreadId && this.currentThreadId.startsWith('thread_')) return 'f0';
       return null;
     }
@@ -87,26 +86,24 @@ export default {
   },
   methods: {
     async fetchThreads() {
-  try {
-    const res = await fetch('http://localhost:8000/threads');
-    if (res.ok) {
-      const data = await res.json();
-      // 后端现在返回 [{"thread_id": "...", "title": "..."}, ...]
-      this.historyItems = data.map(t => ({
-        id: t.thread_id,
-        name: t.title // 直接映射标题
-      }));
-    }
-  } catch (e) {
-    console.error("加载侧边栏失败:", e);
-  }
-},
+      try {
+        const res = await fetch('http://localhost:8000/threads');
+        if (res.ok) {
+          const data = await res.json();
+          this.historyItems = data.map(t => ({
+            id: t.thread_id,
+            name: t.title
+          }));
+        }
+      } catch (e) {
+        console.error("加载侧边栏失败:", e);
+      }
+    },
     handleHistoryClick(item) { 
       this.$emit('select-chat', item.id); 
     },
     handleFixedClick(index) {
       if (index === 0) {
-        // 新建任务：生成临时 ID 并通知父组件
         const newId = 'thread_' + Date.now();
         this.$emit('select-chat', newId);
       }
@@ -159,58 +156,30 @@ export default {
 </script>
 
 <style scoped>
-/* --- 保持原有基础样式不变 --- */
+/* 基础样式保持不变 */
 .sidebar-container { width: 300px; height: 100vh; background: #ebebeb; display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; transition: width 0.3s ease; overflow: hidden; }
 .sidebar-container.collapsed { width: 64px; }
-
 .sidebar-header { height: 56px; display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; box-sizing: border-box; transition: all 0.3s; }
 .sidebar-toggle-icon { width: 24px; height: 24px; cursor: pointer; }
-
 .sidebar-content { flex: 1; padding: 12px 0; display: flex; flex-direction: column; align-items: center; }
-
-/* 基础 item 样式：不要修改这里的 transition 和布局方式 */
 .sidebar-item { position: relative; width: 284px; height: 36px; border-radius: 8px; display: flex; align-items: center; padding: 0 12px; box-sizing: border-box; cursor: pointer; margin-bottom: 4px; transition: background 0.2s; }
 .sidebar-item.active { background: #e0e0e0; }
 .sidebar-item:hover:not(.active) { background: rgba(0, 0, 0, 0.05); }
-
-.item-icon { width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px; }
+.item-icon { width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px; transition: margin 0.3s; }
 .item-text { width: 244px; font-size: 14px; color: rgba(0, 0, 0, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* 历史记录文本和更多图标样式 */
 .history-text { padding-left: 28px; }
 .rename-input { margin-left: 28px; width: 200px; height: 24px; border: 1px solid #42b983; border-radius: 4px; outline: none; padding: 0 4px; }
 .more-icon { position: absolute; right: 8px; width: 20px; opacity: 0; transition: opacity 0.2s ease; }
 .sidebar-item:hover .more-icon { opacity: 1; }
-
-/* 弹窗菜单 */
 .popup-menu { position: absolute; top: 32px; right: 8px; width: 100px; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px; z-index: 100; border: 1px solid #eee; }
 .menu-option { padding: 6px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; }
 .menu-option:hover { background: #f5f5f5; }
 .menu-option.delete span { color: #ff4d4f; }
-
 .divider { width: 260px; height: 1px; background: rgba(0,0,0,0.1); margin: 12px 0; }
 .history-list { width: 100%; overflow-y: auto; flex: 1; }
 
-/* --- 新增：仅针对收缩状态下的修正方案 --- */
-
-/* 1. 让收缩按钮居中 */
-.sidebar-container.collapsed .sidebar-header {
-  justify-content: center;
-  padding: 0;
-}
-
-/* 2. 让顶部三个图标所在的 item 容器收窄并居中 */
-/* 使用具体路径确保不影响展开状态 */
-.sidebar-container.collapsed .sidebar-item {
-  width: 40px;       /* 收缩状态下 item 宽度变小 */
-  padding: 0;        /* 去掉左右内边距 */
-  justify-content: center; /* 内部图标居中 */
-  transition: width 0.3s, background 0.2s; /* 增加宽度过渡效果 */
-}
-
-/* 3. 移除图标右侧的间距，防止偏移 */
-.sidebar-container.collapsed .item-icon {
-  margin-right: 0;
-  transition: margin 0.3s;
-}
+/* 收缩状态修正样式：仅在 collapsed 类生效时改动 */
+.sidebar-container.collapsed .sidebar-header { justify-content: center; padding: 0; }
+.sidebar-container.collapsed .sidebar-item { width: 40px; padding: 0; justify-content: center; transition: width 0.3s; }
+.sidebar-container.collapsed .item-icon { margin-right: 0; }
 </style>
