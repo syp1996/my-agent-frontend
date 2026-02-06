@@ -18,17 +18,25 @@
                 <span class="thought-title">
                   {{ msg.isDoneThinking ? '思考已完成' : '深度思考中...' }}
                 </span>
-                <span class="toggle-arrow">{{ msg.isThoughtExpanded ? '▼' : '▶' }}</span>
+                <span :class="['toggle-arrow', { 'is-expanded': msg.isThoughtExpanded }]">
+                  ▼
+                </span>
               </div>
 
               <div v-if="msg.isThoughtExpanded" class="thought-body">
-                <div v-for="(step, sIndex) in msg.steps" :key="sIndex" class="step-item">
-                  <span class="step-icon">{{ step.status === 'loading' ? '⏳' : '✅' }}</span>
-                  <span class="step-text">{{ step.title }}</span>
-                </div>
+                <div v-for="(item, tIndex) in msg.timeline" :key="tIndex">
+                  
+                  <div v-if="item.type === 'step'" class="step-item">
+                    <span class="step-icon">{{ item.status === 'loading' ? '⏳' : '✅' }}</span>
+                    <span class="step-text">{{ item.title }}</span>
+                  </div>
 
-                <div v-if="msg.thoughts" class="thought-text">
-                  {{ msg.thoughts }}
+                  <div 
+                    v-if="item.type === 'thought'" 
+                    class="thought-segment markdown-body" 
+                    v-html="renderMarkdown(item.content)"
+                  ></div>
+                  
                 </div>
               </div>
             </div>
@@ -111,7 +119,7 @@ export default {
       const rawHtml = md.render(content);
       return DOMPurify.sanitize(rawHtml);
     },
-      async fetchHistory(id) {
+    async fetchHistory(id) {
       this.isLoadingHistory = true;
       this.messages = [];
       this.userInput = ''; 
@@ -119,11 +127,30 @@ export default {
         const res = await fetch(`http://localhost:8000/threads/${id}/history`);
         if (res.ok) {
           const historyData = await res.json();
-            const rawMessages = historyData.history || [];
-          this.messages = rawMessages.map(msg => ({
-            ...msg,
-            role: msg.role === 'assistant' ? 'ai' : msg.role
-          }));
+          const rawMessages = historyData.history || [];
+          
+          this.messages = rawMessages.map(msg => {
+            const isAi = msg.role === 'assistant';
+            let timeline = [];
+            
+            if (isAi) {
+               if (msg.thoughts) {
+                 timeline.push({ type: 'thought', content: msg.thoughts });
+               }
+               if (msg.steps && msg.steps.length) {
+                 msg.steps.forEach(s => timeline.push({ type: 'step', ...s }));
+               }
+            }
+
+            return {
+              ...msg,
+              role: isAi ? 'ai' : msg.role,
+              timeline: timeline,
+              hasThought: timeline.length > 0,
+              isDoneThinking: true,
+              isThoughtExpanded: false // 历史记录默认也是折叠的
+            };
+          });
           this.scrollToBottom();
         }
       } catch (e) { 
@@ -143,14 +170,15 @@ export default {
       const aiMessage = { 
         role: 'ai', 
         content: '', 
-        thoughts: '',          
-        steps: [],             
+        timeline: [], 
         hasThought: false,     
         isDoneThinking: false, 
-        isThoughtExpanded: true 
+        // ✅ 核心修改点：默认设为 false，即默认折叠
+        isThoughtExpanded: false 
       };
       this.messages.push(aiMessage);
       this.scrollToBottom();
+
       try {
         const response = await fetch('http://localhost:8000/chat/stream', {
           method: 'POST',
@@ -160,6 +188,7 @@ export default {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        
         while (this.isStreaming) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -185,30 +214,72 @@ export default {
               }
             });
 
+            // ================== 处理思考流 (Thinking) ==================
             if (eventType === 'thought' && eventData) {
-              aiMessage.thoughts += eventData.content;
               aiMessage.hasThought = true;
-              this.scrollToBottom();
+              const lastItem = aiMessage.timeline[aiMessage.timeline.length - 1];
+              
+              const SEPARATOR = "=====FINAL_ANSWER=====";
+              let newContent = eventData.content;
+
+              if (lastItem && lastItem.type === 'thought') {
+                lastItem.content += newContent;
+                if (lastItem.content.includes(SEPARATOR)) {
+                  lastItem.content = lastItem.content.split(SEPARATOR)[0].trim();
+                }
+              } else {
+                if (newContent.includes(SEPARATOR)) {
+                  newContent = newContent.split(SEPARATOR)[0].trim();
+                }
+                if (newContent) {
+                  aiMessage.timeline.push({ type: 'thought', content: newContent });
+                }
+              }
+              // 如果用户手动展开了，才滚动到底部；否则保持不动或者只滚到正文
+              if (aiMessage.isThoughtExpanded) {
+                  this.scrollToBottom();
+              }
             }
+            
+            // ================== 处理步骤 (Step) ==================
             else if (eventType === 'step' && eventData) {
-              aiMessage.hasThought = true; 
-              const lastStep = aiMessage.steps[aiMessage.steps.length - 1];
+              aiMessage.hasThought = true;
+              
+              let lastStep = null;
+              for (let i = aiMessage.timeline.length - 1; i >= 0; i--) {
+                if (aiMessage.timeline[i].type === 'step') {
+                  lastStep = aiMessage.timeline[i];
+                  break;
+                }
+              }
+
               if (lastStep && lastStep.status === 'loading' && eventData.status === 'done') {
                  lastStep.status = 'done';
                  if (eventData.title) lastStep.title = eventData.title;
               } else {
-                 aiMessage.steps.push(eventData);
+                 aiMessage.timeline.push({
+                   type: 'step',
+                   status: eventData.status || 'loading',
+                   title: eventData.title
+                 });
               }
-              this.scrollToBottom();
+              if (aiMessage.isThoughtExpanded) {
+                  this.scrollToBottom();
+              }
             }
+
+            // ================== 处理回复 (Message) ==================
             else if (eventType === 'message' && eventData) {
               if (!aiMessage.isDoneThinking) {
                 aiMessage.isDoneThinking = true;
+                // 这里原本有 isThoughtExpanded = false 的逻辑，现在默认已经是 false 了，
+                // 但保留着也无妨，确保回答开始时一定是折叠的（如果用户中间手动展开了）
                 aiMessage.isThoughtExpanded = false; 
               }
               aiMessage.content += eventData.content;
               this.scrollToBottom();
             }
+            
             else if (eventType === 'title_generated' && eventData) {
               this.$emit('title-generated', {
                 thread_id: eventData.thread_id,
@@ -239,7 +310,7 @@ export default {
 </script>
 
 <style scoped>
-/* 样式保持不变 */
+/* ================= 布局样式 (严格保持不变) ================= */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
@@ -250,25 +321,89 @@ export default {
 .custom-input-box { position: relative; width: 100%; height: 164px; background: #ffffff; border-radius: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 20px; box-sizing: border-box; outline: none; }
 textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; resize: none; font-size: 16px; font-family: 'PingFang SC', sans-serif; color: #333; background: transparent; box-shadow: none; }
 .play-icon { position: absolute; bottom: 20px; right: 20px; width: 24px; height: 24px; cursor: pointer; }
+
+/* 消息气泡 */
 .message { margin-bottom: 24px; display: flex; width: 100%; }
 .message.user { justify-content: flex-end; }
 .user .message-content { max-width: 85%; background: #f0f0f0; color: #333; padding: 12px 18px; border-radius: 18px; }
 .message.ai { flex-direction: column; align-items: flex-start; } 
-.ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; border-top-left-radius: 0; line-height: 1.6; font-size: 15px; box-sizing: border-box; }
-.ai-label-container { width: 100%; display: flex; justify-content: flex-start; padding-left: 0; box-sizing: border-box; margin-bottom: -1px; position: relative; z-index: 2; }
-.ai-label { color: #666; font-size: 14px; padding: 12px 12px; border-radius: 8px 8px 0 0; border-bottom: none; font-weight: 500; }
-.thought-process { background-color: #f7f7f8; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e5e5e5; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-.thought-header { display: flex; align-items: center; padding: 8px 12px; cursor: pointer; background: #f0f0f0; font-size: 13px; color: #666; user-select: none; transition: background 0.2s; }
-.thought-header:hover { background: #e8e8e8; }
-.thinking-spinner { animation: spin 1s linear infinite; margin-right: 8px; font-size: 12px; }
-.thinking-icon { margin-right: 8px; font-size: 12px; }
-.thought-title { flex: 1; font-weight: 500; }
-.toggle-arrow { font-size: 10px; color: #999; margin-left: 8px; }
-.thought-body { padding: 10px 12px; border-top: 1px solid #e5e5e5; background: #fff; }
-.step-item { display: flex; align-items: flex-start; margin-bottom: 8px; font-size: 13px; color: #444; line-height: 1.5; }
-.step-icon { margin-right: 8px; min-width: 16px; text-align: center; }
-.thought-text { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #eee; color: #888; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.ai .message-content { 
+  width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; 
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; 
+  border-top-left-radius: 0; line-height: 1.6; font-size: 15px; box-sizing: border-box; 
+}
+
+.ai-label-container { width: 100%; display: flex; justify-content: flex-start; margin-bottom: -1px; position: relative; z-index: 2; }
+.ai-label { color: #666; font-size: 14px; padding: 12px 12px; font-weight: 500; }
+
+/* ================= Gemini 风格思考过程 ================= */
+.thought-process {
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  border: 1px solid #e9ecef;
+  margin: 16px 0;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.thought-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #495057;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+.thought-header:hover { background-color: rgba(0, 0, 0, 0.03); }
+
+.thinking-spinner { animation: spin 1s linear infinite; margin-right: 12px; font-size: 16px; color: #1a73e8; }
+.thinking-icon { margin-right: 12px; font-size: 16px; color: #1a73e8; }
+.thought-title { flex: 1; letter-spacing: 0.01em; }
+
+.toggle-arrow {
+  font-size: 12px; color: #adb5bd; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: 8px; display: inline-block;
+}
+.toggle-arrow.is-expanded { transform: rotate(180deg); }
+
+.thought-body {
+  padding: 0 16px 16px 16px;
+  background: transparent;
+  color: #3c4043;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.step-item {
+  display: flex; align-items: center; margin-top: 12px; margin-bottom: 12px;
+  font-size: 13px; font-weight: 500; color: #1f2937;
+}
+.step-icon { width: 20px; margin-right: 8px; text-align: center; display: inline-block; }
+
+/* ✅ 修改点：思考片段支持 Markdown 样式 */
+.thought-segment {
+  margin-top: 8px; margin-bottom: 8px; padding-left: 28px;
+  font-size: 14px; line-height: 1.6; color: #3c4043;
+  position: relative;
+}
+
+/* 针对 Markdown 内容的微调，去掉默认 margin */
+.thought-segment.markdown-body >>> p { margin: 0 0 8px 0; }
+.thought-segment.markdown-body >>> p:last-child { margin-bottom: 0; }
+
+.thought-body > div:first-child .thought-segment,
+.thought-body > div:first-child .step-item {
+  margin-top: 0;
+}
+
+/* 动画 */
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ================= Markdown (保持不变) ================= */
 .markdown-body { word-break: break-word; }
 .markdown-body >>> p { margin: 0 0 10px 0; }
 .markdown-body >>> p:last-child { margin-bottom: 0; }
