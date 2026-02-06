@@ -5,7 +5,7 @@
     <div class="chat-box" ref="chatBox">
       <div class="messages-wrapper">
         <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.role]">
-          <div v-if="msg.role === 'ai'" class="ai-label-container">
+          <div v-if="msg.role === 'ai' && (msg.content || msg.hasThought)" class="ai-label-container">
             <span class="ai-label">Agent</span>
           </div>
 
@@ -209,7 +209,6 @@ export default {
               aiMessage.content += eventData.content;
               this.scrollToBottom();
             }
-            // --- 核心修改：处理标题生成事件 ---
             else if (eventType === 'title_generated' && eventData) {
               this.$emit('title-generated', {
                 thread_id: eventData.thread_id,
@@ -240,7 +239,7 @@ export default {
 </script>
 
 <style scoped>
-/* 保持原有样式不变 */
+/* 样式保持不变 */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
