@@ -95,7 +95,6 @@ export default {
       messages: [], 
       isStreaming: false,
       isLoadingHistory: false,
-      // 已删除 currentAgent
     };
   },
   watch: {
@@ -121,12 +120,10 @@ export default {
         if (res.ok) {
           const historyData = await res.json();
             const rawMessages = historyData.history || [];
-            console.log('222222',rawMessages)
           this.messages = rawMessages.map(msg => ({
             ...msg,
             role: msg.role === 'assistant' ? 'ai' : msg.role
           }));
-          console.log('1111',this.messages)
           this.scrollToBottom();
         }
       } catch (e) { 
@@ -188,19 +185,14 @@ export default {
               }
             });
 
-            // 1. 处理推理流 (Thought)
             if (eventType === 'thought' && eventData) {
               aiMessage.thoughts += eventData.content;
               aiMessage.hasThought = true;
               this.scrollToBottom();
             }
-            
-            // 2. 处理步骤 (Step)
             else if (eventType === 'step' && eventData) {
               aiMessage.hasThought = true; 
-              
               const lastStep = aiMessage.steps[aiMessage.steps.length - 1];
-              
               if (lastStep && lastStep.status === 'loading' && eventData.status === 'done') {
                  lastStep.status = 'done';
                  if (eventData.title) lastStep.title = eventData.title;
@@ -209,8 +201,6 @@ export default {
               }
               this.scrollToBottom();
             }
-
-            // 3. 处理正式回复 (Message)
             else if (eventType === 'message' && eventData) {
               if (!aiMessage.isDoneThinking) {
                 aiMessage.isDoneThinking = true;
@@ -219,13 +209,19 @@ export default {
               aiMessage.content += eventData.content;
               this.scrollToBottom();
             }
+            // --- 核心修改：处理标题生成事件 ---
+            else if (eventType === 'title_generated' && eventData) {
+              this.$emit('title-generated', {
+                thread_id: eventData.thread_id,
+                title: eventData.title
+              });
+            }
           }
         }
       } catch (error) { aiMessage.content += "\n[连接失败]"; }
       finally { 
         this.isStreaming = false; 
         if (aiMessage) aiMessage.isDoneThinking = true;
-
         if (isFirstMessage) {
           this.$emit('first-message-sent');
         }
@@ -244,6 +240,7 @@ export default {
 </script>
 
 <style scoped>
+/* 保持原有样式不变 */
 .chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
 .chat-header { height: 56px; }
 .chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
@@ -254,138 +251,25 @@ export default {
 .custom-input-box { position: relative; width: 100%; height: 164px; background: #ffffff; border-radius: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 20px; box-sizing: border-box; outline: none; }
 textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; resize: none; font-size: 16px; font-family: 'PingFang SC', sans-serif; color: #333; background: transparent; box-shadow: none; }
 .play-icon { position: absolute; bottom: 20px; right: 20px; width: 24px; height: 24px; cursor: pointer; }
-
 .message { margin-bottom: 24px; display: flex; width: 100%; }
 .message.user { justify-content: flex-end; }
 .user .message-content { max-width: 85%; background: #f0f0f0; color: #333; padding: 12px 18px; border-radius: 18px; }
-
-/* AI 消息样式 */
 .message.ai { flex-direction: column; align-items: flex-start; } 
-
-.ai .message-content { 
-  width: 100%; 
-  max-width: 100%; 
-  background: #fff; 
-  border: 1px solid #f0f0f0; 
-  box-shadow: 0 2px 8px rgba(0,0,0,0.02); 
-  padding: 12px 18px; 
-  border-radius: 18px; 
-  border-top-left-radius: 0; 
-  line-height: 1.6; 
-  font-size: 15px; 
-  box-sizing: border-box;
-}
-
-/* AI 标签容器 */
-.ai-label-container {
-  width: 100%;
-  display: flex;
-  justify-content: flex-start;
-  padding-left: 0; 
-  box-sizing: border-box;
-  margin-bottom: -1px; 
-  position: relative;
-  z-index: 2;
-}
-
-.ai-label {
-  color: #666;
-  font-size: 14px;
-  padding: 12px 12px;
-  border-radius: 8px 8px 0 0;
-  border-bottom: none;
-  font-weight: 500;
-}
-
-/* 思考过程容器 */
-.thought-process {
-  background-color: #f7f7f8;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  border: 1px solid #e5e5e5;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-
-/* 头部点击区 */
-.thought-header {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  cursor: pointer;
-  background: #f0f0f0;
-  font-size: 13px;
-  color: #666;
-  user-select: none;
-  transition: background 0.2s;
-}
-
-.thought-header:hover {
-  background: #e8e8e8;
-}
-
-.thinking-spinner {
-  animation: spin 1s linear infinite;
-  margin-right: 8px;
-  font-size: 12px;
-}
-
-.thinking-icon {
-  margin-right: 8px;
-  font-size: 12px;
-}
-
-.thought-title {
-  flex: 1;
-  font-weight: 500;
-}
-
-.toggle-arrow {
-  font-size: 10px;
-  color: #999;
-  margin-left: 8px;
-}
-
-/* 内容区 */
-.thought-body {
-  padding: 10px 12px;
-  border-top: 1px solid #e5e5e5;
-  background: #fff;
-}
-
-/* 步骤项 */
-.step-item {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: #444;
-  line-height: 1.5;
-}
-
-.step-icon {
-  margin-right: 8px;
-  min-width: 16px;
-  text-align: center;
-}
-
-/* 推理文本 */
-.thought-text {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #eee;
-  color: #888;
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Markdown 样式 */
+.ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; border-top-left-radius: 0; line-height: 1.6; font-size: 15px; box-sizing: border-box; }
+.ai-label-container { width: 100%; display: flex; justify-content: flex-start; padding-left: 0; box-sizing: border-box; margin-bottom: -1px; position: relative; z-index: 2; }
+.ai-label { color: #666; font-size: 14px; padding: 12px 12px; border-radius: 8px 8px 0 0; border-bottom: none; font-weight: 500; }
+.thought-process { background-color: #f7f7f8; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e5e5e5; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.thought-header { display: flex; align-items: center; padding: 8px 12px; cursor: pointer; background: #f0f0f0; font-size: 13px; color: #666; user-select: none; transition: background 0.2s; }
+.thought-header:hover { background: #e8e8e8; }
+.thinking-spinner { animation: spin 1s linear infinite; margin-right: 8px; font-size: 12px; }
+.thinking-icon { margin-right: 8px; font-size: 12px; }
+.thought-title { flex: 1; font-weight: 500; }
+.toggle-arrow { font-size: 10px; color: #999; margin-left: 8px; }
+.thought-body { padding: 10px 12px; border-top: 1px solid #e5e5e5; background: #fff; }
+.step-item { display: flex; align-items: flex-start; margin-bottom: 8px; font-size: 13px; color: #444; line-height: 1.5; }
+.step-icon { margin-right: 8px; min-width: 16px; text-align: center; }
+.thought-text { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #eee; color: #888; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .markdown-body { word-break: break-word; }
 .markdown-body >>> p { margin: 0 0 10px 0; }
 .markdown-body >>> p:last-child { margin-bottom: 0; }
@@ -393,7 +277,6 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
 .markdown-body >>> pre code { background-color: transparent; padding: 0; }
 .markdown-body >>> .hljs { padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; background: #f6f8fa; }
 .markdown-body >>> ul, .markdown-body >>> ol { padding-left: 2em; margin-bottom: 10px; }
-
 .loading-tip { text-align: center; color: #bbb; font-size: 13px; padding: 20px; }
 .scroll-anchor { height: 1px; width: 100%; flex-shrink: 0; }
 </style>

@@ -13,6 +13,7 @@
         :key="currentThreadId" 
         :thread-id="currentThreadId" 
         @first-message-sent="refreshSidebar"
+        @title-generated="onTitleGenerated"
       />
     </div>
   </div>
@@ -41,12 +42,19 @@ export default {
           this.$refs.sidebar.fetchThreads();
         }
       }, 500); 
+    },
+    // --- 核心修改：接收标题并更新侧边栏 ---
+    onTitleGenerated(payload) {
+      if (this.$refs.sidebar) {
+        this.$refs.sidebar.updateItemTitle(payload);
+      }
     }
   }
 }
 </script>
 
 <style>
+/* 保持原有样式不变 */
 html, body { margin: 0; padding: 0; height: 100%; background: #f8f8f7; overflow: hidden; }
 #app { display: flex; height: 100vh; font-family: 'PingFang SC', Arial, sans-serif; }
 .main-content { flex: 1; height: 100%; overflow: hidden; transition: all 0.3s ease; display: flex; flex-direction: column; }

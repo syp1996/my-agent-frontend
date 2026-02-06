@@ -99,6 +99,13 @@ export default {
         console.error("加载侧边栏失败:", e);
       }
     },
+    // --- 核心修改：手动更新特定 ID 的标题 ---
+    updateItemTitle({ thread_id, title }) {
+      const item = this.historyItems.find(i => i.id === thread_id);
+      if (item) {
+        item.name = title;
+      }
+    },
     handleHistoryClick(item) { 
       this.$emit('select-chat', item.id); 
     },
@@ -156,7 +163,7 @@ export default {
 </script>
 
 <style scoped>
-/* 基础样式保持不变 */
+/* 保持原有样式不变 */
 .sidebar-container { width: 300px; height: 100vh; background: #ebebeb; display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; transition: width 0.3s ease; overflow: hidden; }
 .sidebar-container.collapsed { width: 64px; }
 .sidebar-header { height: 56px; display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; box-sizing: border-box; transition: all 0.3s; }
@@ -177,8 +184,6 @@ export default {
 .menu-option.delete span { color: #ff4d4f; }
 .divider { width: 260px; height: 1px; background: rgba(0,0,0,0.1); margin: 12px 0; }
 .history-list { width: 100%; overflow-y: auto; flex: 1; }
-
-/* 收缩状态修正样式：仅在 collapsed 类生效时改动 */
 .sidebar-container.collapsed .sidebar-header { justify-content: center; padding: 0; }
 .sidebar-container.collapsed .sidebar-item { width: 40px; padding: 0; justify-content: center; transition: width 0.3s; }
 .sidebar-container.collapsed .item-icon { margin-right: 0; }
