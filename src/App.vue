@@ -29,12 +29,52 @@ export default {
   data() {
     return {
       isCollapsed: false,
-      currentThreadId: 'thread_' + Date.now()
+      // 1. 初始值设为空，由 mounted 逻辑接管
+      currentThreadId: ''
     }
   },
+  created() {
+    // 2. 在组件创建时初始化 ID
+    this.initThreadId();
+  },
+  mounted() {
+    // 3. 监听浏览器前进/后退，确保 URL 变化时页面同步
+    window.addEventListener('hashchange', this.syncIdFromHash);
+  },
+  beforeDestroy() {
+    window.removeEventListener('hashchange', this.syncIdFromHash);
+  },
   methods: {
+    initThreadId() {
+      // 优先级：URL Hash > localStorage > 新生成
+      const hashId = window.location.hash.replace('#/', '');
+      const localId = localStorage.getItem('last_thread_id');
+      
+      if (hashId && hashId.startsWith('thread_')) {
+        this.currentThreadId = hashId;
+      } else if (localId) {
+        this.currentThreadId = localId;
+        window.location.hash = `/${localId}`;
+      } else {
+        const newId = 'thread_' + Date.now();
+        this.currentThreadId = newId;
+        this.updateBrowserState(newId);
+      }
+    },
+    syncIdFromHash() {
+      const hashId = window.location.hash.replace('#/', '');
+      if (hashId && hashId !== this.currentThreadId) {
+        this.currentThreadId = hashId;
+      }
+    },
     updateCurrentThread(id) {
       this.currentThreadId = id;
+      this.updateBrowserState(id);
+    },
+    updateBrowserState(id) {
+      // 更新 URL Hash 和本地存储
+      window.location.hash = `/${id}`;
+      localStorage.setItem('last_thread_id', id);
     },
     refreshSidebar() {
       setTimeout(() => {
@@ -43,7 +83,6 @@ export default {
         }
       }, 500); 
     },
-    // --- 核心修改：接收标题并更新侧边栏 ---
     onTitleGenerated(payload) {
       if (this.$refs.sidebar) {
         this.$refs.sidebar.updateItemTitle(payload);
