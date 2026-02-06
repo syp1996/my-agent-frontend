@@ -1,4 +1,4 @@
-# my-agent-frontend
+# Taurus
 
 ## Project setup
 ```
