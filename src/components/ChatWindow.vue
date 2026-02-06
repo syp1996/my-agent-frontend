@@ -9,7 +9,30 @@
             <span class="ai-label">Agent</span>
           </div>
 
-          <div class="message-content" v-if="msg.content">
+          <div class="message-content" v-if="msg.content || msg.hasThought">
+            
+            <div v-if="msg.role === 'ai' && msg.hasThought" class="thought-process">
+              <div class="thought-header" @click="msg.isThoughtExpanded = !msg.isThoughtExpanded">
+                <span v-if="!msg.isDoneThinking" class="thinking-spinner">🔄</span>
+                <span v-else class="thinking-icon">💡</span>
+                <span class="thought-title">
+                  {{ msg.isDoneThinking ? '思考已完成' : '深度思考中...' }}
+                </span>
+                <span class="toggle-arrow">{{ msg.isThoughtExpanded ? '▼' : '▶' }}</span>
+              </div>
+
+              <div v-if="msg.isThoughtExpanded" class="thought-body">
+                <div v-for="(step, sIndex) in msg.steps" :key="sIndex" class="step-item">
+                  <span class="step-icon">{{ step.status === 'loading' ? '⏳' : '✅' }}</span>
+                  <span class="step-text">{{ step.title }}</span>
+                </div>
+
+                <div v-if="msg.thoughts" class="thought-text">
+                  {{ msg.thoughts }}
+                </div>
+              </div>
+            </div>
+
             <div 
               v-if="msg.role === 'ai'" 
               class="markdown-body" 
@@ -20,12 +43,7 @@
         </div>
         
         <div v-if="isLoadingHistory" class="loading-tip">正在拉取历史记录...</div>
-        
-        <div v-if="currentAgent" class="agent-status">
-          <span class="status-dot"></span>
-          ⚡ {{ currentAgent }}...
         </div>
-      </div>
       <div class="scroll-anchor"></div>
     </div>
 
@@ -77,7 +95,7 @@ export default {
       messages: [], 
       isStreaming: false,
       isLoadingHistory: false,
-      currentAgent: '',
+      // 已删除 currentAgent
     };
   },
   watch: {
@@ -94,7 +112,7 @@ export default {
       const rawHtml = md.render(content);
       return DOMPurify.sanitize(rawHtml);
     },
-    async fetchHistory(id) {
+      async fetchHistory(id) {
       this.isLoadingHistory = true;
       this.messages = [];
       this.userInput = ''; 
@@ -102,11 +120,13 @@ export default {
         const res = await fetch(`http://localhost:8000/threads/${id}/history`);
         if (res.ok) {
           const historyData = await res.json();
-          const rawMessages = historyData.history || [];
+            const rawMessages = historyData.history || [];
+            console.log('222222',rawMessages)
           this.messages = rawMessages.map(msg => ({
             ...msg,
             role: msg.role === 'assistant' ? 'ai' : msg.role
           }));
+          console.log('1111',this.messages)
           this.scrollToBottom();
         }
       } catch (e) { 
@@ -122,8 +142,16 @@ export default {
       this.messages.push({ role: 'user', content: query });
       this.userInput = ''; 
       this.isStreaming = true;
-      this.currentAgent = 'Supervisor (调度中)';
-      const aiMessage = { role: 'ai', content: '' };
+      
+      const aiMessage = { 
+        role: 'ai', 
+        content: '', 
+        thoughts: '',          
+        steps: [],             
+        hasThought: false,     
+        isDoneThinking: false, 
+        isThoughtExpanded: true 
+      };
       this.messages.push(aiMessage);
       this.scrollToBottom();
       try {
@@ -141,34 +169,66 @@ export default {
           buffer += decoder.decode(value, { stream: true });
           const events = buffer.split('\n\n');
           buffer = events.pop();
+          
           for (const eventStr of events) {
             if (!eventStr.trim()) continue;
             const lines = eventStr.split('\n');
             let eventType = null;
             let eventData = null;
+            
             lines.forEach(line => {
               if (line.startsWith('event: ')) eventType = line.substring(7).trim();
               else if (line.startsWith('data: ')) {
                 const dataStr = line.substring(6).trim();
-                if (dataStr === '[DONE]') this.currentAgent = '';
-                else { try { eventData = JSON.parse(dataStr); } catch (e) { console.error(e); } }
+                if (dataStr === '[DONE]') {
+                   // 结束信号
+                } else { 
+                   try { eventData = JSON.parse(dataStr); } catch (e) { console.error(e); } 
+                }
               }
             });
-            if (eventType === 'agent_start' && eventData) { 
-              this.currentAgent = eventData.agent; 
-              this.scrollToBottom(); 
+
+            // 1. 处理推理流 (Thought)
+            if (eventType === 'thought' && eventData) {
+              aiMessage.thoughts += eventData.content;
+              aiMessage.hasThought = true;
+              this.scrollToBottom();
             }
-            else if (eventType === 'message' && eventData) { 
-              aiMessage.content += eventData.content; 
-              this.scrollToBottom(); 
+            
+            // 2. 处理步骤 (Step)
+            else if (eventType === 'step' && eventData) {
+              aiMessage.hasThought = true; 
+              
+              const lastStep = aiMessage.steps[aiMessage.steps.length - 1];
+              
+              if (lastStep && lastStep.status === 'loading' && eventData.status === 'done') {
+                 lastStep.status = 'done';
+                 if (eventData.title) lastStep.title = eventData.title;
+              } else {
+                 aiMessage.steps.push(eventData);
+              }
+              this.scrollToBottom();
+            }
+
+            // 3. 处理正式回复 (Message)
+            else if (eventType === 'message' && eventData) {
+              if (!aiMessage.isDoneThinking) {
+                aiMessage.isDoneThinking = true;
+                aiMessage.isThoughtExpanded = false; 
+              }
+              aiMessage.content += eventData.content;
+              this.scrollToBottom();
             }
           }
         }
       } catch (error) { aiMessage.content += "\n[连接失败]"; }
       finally { 
         this.isStreaming = false; 
-        this.currentAgent = ''; 
-        if (isFirstMessage) this.$emit('first-message-sent');
+        if (aiMessage) aiMessage.isDoneThinking = true;
+
+        if (isFirstMessage) {
+          this.$emit('first-message-sent');
+        }
       }
     },
     scrollToBottom() {
@@ -210,20 +270,20 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
   box-shadow: 0 2px 8px rgba(0,0,0,0.02); 
   padding: 12px 18px; 
   border-radius: 18px; 
-  border-top-left-radius: 0; /* 去掉左上圆角，使其与标签左侧对齐并连接 */
+  border-top-left-radius: 0; 
   line-height: 1.6; 
   font-size: 15px; 
   box-sizing: border-box;
 }
 
-/* AI 标签容器：对齐容器边缘 */
+/* AI 标签容器 */
 .ai-label-container {
   width: 100%;
   display: flex;
   justify-content: flex-start;
-  padding-left: 0; /* 修改：设为 0 以对齐 message-content 容器的左边缘 */
+  padding-left: 0; 
   box-sizing: border-box;
-  margin-bottom: -1px; /* 负边距让标签边框与气泡边框重合，视觉更统一 */
+  margin-bottom: -1px; 
   position: relative;
   z-index: 2;
 }
@@ -237,6 +297,94 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
   font-weight: 500;
 }
 
+/* 思考过程容器 */
+.thought-process {
+  background-color: #f7f7f8;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #e5e5e5;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* 头部点击区 */
+.thought-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #f0f0f0;
+  font-size: 13px;
+  color: #666;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.thought-header:hover {
+  background: #e8e8e8;
+}
+
+.thinking-spinner {
+  animation: spin 1s linear infinite;
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.thinking-icon {
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.thought-title {
+  flex: 1;
+  font-weight: 500;
+}
+
+.toggle-arrow {
+  font-size: 10px;
+  color: #999;
+  margin-left: 8px;
+}
+
+/* 内容区 */
+.thought-body {
+  padding: 10px 12px;
+  border-top: 1px solid #e5e5e5;
+  background: #fff;
+}
+
+/* 步骤项 */
+.step-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #444;
+  line-height: 1.5;
+}
+
+.step-icon {
+  margin-right: 8px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* 推理文本 */
+.thought-text {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #eee;
+  color: #888;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Markdown 样式 */
 .markdown-body { word-break: break-word; }
 .markdown-body >>> p { margin: 0 0 10px 0; }
@@ -246,8 +394,6 @@ textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; 
 .markdown-body >>> .hljs { padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; background: #f6f8fa; }
 .markdown-body >>> ul, .markdown-body >>> ol { padding-left: 2em; margin-bottom: 10px; }
 
-.agent-status { align-self: center; background: rgba(232, 245, 233, 0.9); color: #2e7d32; padding: 6px 14px; border-radius: 20px; font-size: 12px; margin-bottom: 20px; display: flex; align-items: center; }
-.status-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; margin-right: 8px; }
 .loading-tip { text-align: center; color: #bbb; font-size: 13px; padding: 20px; }
 .scroll-anchor { height: 1px; width: 100%; flex-shrink: 0; }
 </style>
