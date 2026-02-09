@@ -13,83 +13,54 @@
             
             <div v-if="msg.role === 'ai' && !msg.hasThought && !msg.content" class="preparing-state">
               <span class="dot-flashing"></span>
-              <span class="preparing-text">正在接入神经系统...</span>
+              <span class="preparing-text">正在接入系统...</span>
             </div>
 
             <template v-else>
-              <div 
-                v-if="msg.role === 'ai' && msg.hasThought" 
-                :class="['thought-process', { 'thinking-active': !msg.isDoneThinking }]"
-              >
+              <div v-if="msg.role === 'ai' && msg.hasThought" :class="['thought-process', { 'thinking-active': !msg.isDoneThinking }]">
                 <div class="thought-header" @click="msg.isThoughtExpanded = !msg.isThoughtExpanded">
                   <div class="status-indicator">
                     <span v-if="!msg.isDoneThinking" class="thinking-spinner-modern"></span>
                     <span v-else class="thinking-icon-done">✨</span>
                   </div>
-                  
                   <div class="status-text">
-                    <span class="status-title">
-                      {{ msg.isDoneThinking ? '深度思考已完成' : '正在思考' }}
-                    </span>
-                    <span class="status-timer" v-if="msg.thinkingDuration > 0">
-                      {{ msg.thinkingDuration }}s
-                    </span>
+                    <span class="status-title">{{ msg.isDoneThinking ? '思考已完成' : '正在思考' }}</span>
+                    <span class="status-timer" v-if="msg.thinkingDuration > 0">{{ msg.thinkingDuration }}s</span>
                   </div>
-
                   <span :class="['toggle-arrow', { 'is-expanded': msg.isThoughtExpanded }]">
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>
                   </span>
                 </div>
 
                 <div v-if="msg.isThoughtExpanded" class="thought-body">
                   <div class="timeline-container">
-                    <div v-for="(item, tIndex) in msg.timeline" :key="tIndex" class="timeline-item">
-                      
-                      <div v-if="item.type === 'step'" class="step-card">
-                        <div class="step-status">
-                          <span v-if="item.status === 'loading'" class="pulse-dot"></span>
-                          <span v-else class="check-icon">✓</span>
+                    <div v-for="(item, tIndex) in msg.timeline" :key="tIndex" class="thought-node">
+                      <div class="node-header">
+                        <div class="node-icon">
+                          <span v-if="item.status === 'loading'" class="spinner-small"></span>
+                          <span v-else class="icon-success">✓</span>
                         </div>
-                        <span class="step-text">{{ item.title }}</span>
+                        <span class="node-title">{{ item.title }}</span>
                       </div>
-
-                      <div 
-                        v-if="item.type === 'thought'" 
-                        :class="['thought-segment', 'markdown-body', { 'is-streaming': !msg.isDoneThinking && tIndex === msg.timeline.length - 1 }]" 
-                        v-html="renderMarkdown(item.content)"
-                      ></div>
-                      
+                      <div v-if="item.content" :class="['node-body', 'markdown-body', { 'is-streaming': !msg.isDoneThinking && tIndex === msg.timeline.length - 1 }]" v-html="renderMarkdown(item.content)"></div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div 
-                v-if="msg.role === 'ai'" 
-                class="markdown-body" 
-                v-html="renderMarkdown(msg.content)"
-              ></div>
+              <div v-if="msg.role === 'ai'" class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
               <span v-else style="white-space: pre-wrap;">{{ msg.content }}</span>
             </template>
-
           </div>
         </div>
-        
-        <div v-if="isLoadingHistory" class="loading-tip">正在拉取历史记录...</div>
-        </div>
+        <div v-if="isLoadingHistory" class="loading-tip">正在同步历史记录...</div>
+      </div>
       <div class="scroll-anchor"></div>
     </div>
 
-    <div v-if="messages.length > 0 || isLoadingHistory" class="bottom-mask"></div>
-
     <div :class="['input-section', { 'at-bottom': messages.length > 0 || isLoadingHistory }]">
       <div class="custom-input-box">
-        <textarea 
-          v-model="userInput" 
-          @keyup.enter.exact.prevent="sendMessage" 
-          placeholder="问问我关于杭州地铁的一切..." 
-          :disabled="isStreaming"
-        ></textarea>
+        <textarea v-model="userInput" @keyup.enter.exact.prevent="sendMessage" placeholder="描述您的问题..." :disabled="isStreaming"></textarea>
         <img src="~@/assets/play.png" class="play-icon" @click="sendMessage" alt="send" />
       </div>
     </div>
@@ -104,391 +75,163 @@ import MarkdownIt from 'markdown-it';
 
 const md = new MarkdownIt({
   html: true,
-  linkify: true,
-  typographer: true,
-  highlight: function (str, lang) {
+  highlight: (str, lang) => {
     if (lang && hljs.getLanguage(lang)) {
       try {
-        return '<pre class="hljs"><code>' +
-               hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
-               '</code></pre>';
-      } catch (__) { console.error(__); }
+        return hljs.highlight(str, { language: lang }).value;
+      } catch (err) {
+        console.error('Highlight error:', err);
+      }
     }
-    return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
+    return md.utils.escapeHtml(str);
   }
 });
 
 export default {
-  props: {
-    threadId: { type: String, required: true }
-  },
-  data() {
-    return {
-      userInput: '',
-      messages: [], 
-      isStreaming: false,
-      isLoadingHistory: false,
-      timerInterval: null, // ✅ 新增：用于计时器的 Interval
-    };
-  },
-  watch: {
-    threadId: {
-      immediate: true,
-      handler(newVal) {
-        if (newVal) this.fetchHistory(newVal);
-      }
-    }
-  },
+  props: { threadId: { type: String, required: true } },
+  data() { return { userInput: '', messages: [], isStreaming: false, isLoadingHistory: false, timerInterval: null }; },
+  watch: { threadId: { immediate: true, handler(v) { if (v) this.fetchHistory(v); } } },
   methods: {
-    renderMarkdown(content) {
-      if (!content) return '';
-      const rawHtml = md.render(content);
-      return DOMPurify.sanitize(rawHtml);
+    renderMarkdown(c) {
+      if (!c) return '';
+      // 深度清洗残留标签
+      const cleaned = c.replace(/^(Content:|Title:.*?\n)/gim, '').trim();
+      return DOMPurify.sanitize(md.render(cleaned));
+    },
+    parseThoughts(raw) {
+      const nodes = [];
+      const regex = /Title:\s*(.*?)\s*\n\s*Content:\s*([\s\S]*?)(?=\n\s*Title:|$)/g;
+      let m;
+      while ((m = regex.exec(raw)) !== null) {
+        nodes.push({ title: m[1].trim(), content: m[2].trim(), status: 'done' });
+      }
+      return nodes.length ? nodes : [{ title: '思维链', content: raw, status: 'done' }];
     },
     async fetchHistory(id) {
       this.isLoadingHistory = true;
       this.messages = [];
-      this.userInput = ''; 
       try {
         const res = await fetch(`http://localhost:8000/threads/${id}/history`);
-        if (res.ok) {
-          const historyData = await res.json();
-          const rawMessages = historyData.history || [];
-          
-          this.messages = rawMessages.map(msg => {
-            const isAi = msg.role === 'assistant';
-            let timeline = [];
-            
-            if (isAi) {
-               if (msg.thoughts) {
-                 timeline.push({ type: 'thought', content: msg.thoughts });
-               }
-               if (msg.steps && msg.steps.length) {
-                 msg.steps.forEach(s => timeline.push({ type: 'step', ...s }));
-               }
-            }
-
-            return {
-              ...msg,
-              role: isAi ? 'ai' : msg.role,
-              timeline: timeline,
-              hasThought: timeline.length > 0,
-              isDoneThinking: true,
-              isThoughtExpanded: false,
-              thinkingDuration: 0 // 历史记录不显示具体耗时，或默认为0
-            };
-          });
-          this.scrollToBottom();
-        }
-      } catch (e) { 
-        console.error("获取历史记录失败:", e); 
-      } finally { 
-        this.isLoadingHistory = false; 
+        const data = await res.json();
+        this.messages = (data.history || []).map(msg => {
+          const isAi = msg.role === 'assistant';
+          let timeline = isAi && msg.thoughts ? this.parseThoughts(msg.thoughts) : [];
+          if (isAi && msg.steps) msg.steps.forEach(s => timeline.push({ ...s, content: '' }));
+          return { ...msg, role: isAi ? 'ai' : msg.role, timeline, hasThought: timeline.length > 0, isDoneThinking: true, isThoughtExpanded: false, thinkingDuration: 0 };
+        });
+        this.scrollToBottom();
+      } catch (err) {
+        console.error('Fetch history failed:', err);
+      } finally {
+        this.isLoadingHistory = false;
       }
     },
     async sendMessage() {
       if (!this.userInput || this.isStreaming) return;
-      const isFirstMessage = this.messages.length === 0;
       const query = this.userInput;
       this.messages.push({ role: 'user', content: query });
-      this.userInput = ''; 
-      this.isStreaming = true;
-      
-      const aiMessage = { 
-        role: 'ai', 
-        content: '', 
-        timeline: [], 
-        hasThought: false,     
-        isDoneThinking: false, 
-        isThoughtExpanded: true, // ⚠️ 流式输出时，建议默认展开，让用户看到“心流”
-        thinkingDuration: 0.0,   // ✅ 新增：计时器
-        startTime: Date.now()    // ✅ 新增：记录开始时间
-      };
-      this.messages.push(aiMessage);
+      this.userInput = ''; this.isStreaming = true;
+      const aiMsg = { role: 'ai', content: '', timeline: [], hasThought: false, isDoneThinking: false, isThoughtExpanded: true, thinkingDuration: 0.0, startTime: Date.now() };
+      this.messages.push(aiMsg);
       this.scrollToBottom();
 
-      // ✅ 开启计时器
       this.timerInterval = setInterval(() => {
-        if (!aiMessage.isDoneThinking) {
-          const now = Date.now();
-          aiMessage.thinkingDuration = ((now - aiMessage.startTime) / 1000).toFixed(1);
-        }
+        if (!aiMsg.isDoneThinking) aiMsg.thinkingDuration = ((Date.now() - aiMsg.startTime) / 1000).toFixed(1);
       }, 100);
 
       try {
-        const response = await fetch('http://localhost:8000/chat/stream', {
+        const res = await fetch('http://localhost:8000/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query, thread_id: this.threadId })
         });
-        const reader = response.body.getReader();
+        const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
-        
-        while (this.isStreaming) {
+        let curBlock = null;
+
+        /* eslint-disable-next-line no-constant-condition */
+        while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const events = buffer.split('\n\n');
-          buffer = events.pop();
-          
-          for (const eventStr of events) {
-            if (!eventStr.trim()) continue;
-            const lines = eventStr.split('\n');
-            let eventType = null;
-            let eventData = null;
-            
-            lines.forEach(line => {
-              if (line.startsWith('event: ')) eventType = line.substring(7).trim();
-              else if (line.startsWith('data: ')) {
-                const dataStr = line.substring(6).trim();
-                if (dataStr === '[DONE]') {
-                   // 结束信号
-                } else { 
-                   try { eventData = JSON.parse(dataStr); } catch (e) { console.error(e); } 
-                }
-              }
-            });
+          const chunks = decoder.decode(value).split('\n\n');
+          for (const chunk of chunks) {
+            if (!chunk.trim()) continue;
+            const eventPart = chunk.split('\n')[0];
+            const event = eventPart ? eventPart.replace('event: ', '') : '';
+            const dataPart = chunk.split('\ndata: ')[1];
+            const data = JSON.parse(dataPart || '{}');
 
-            if (eventType === 'thought' && eventData) {
-              aiMessage.hasThought = true;
-              const lastItem = aiMessage.timeline[aiMessage.timeline.length - 1];
-              
-              const SEPARATOR = "=====FINAL_ANSWER=====";
-              let newContent = eventData.content;
-
-              if (lastItem && lastItem.type === 'thought') {
-                lastItem.content += newContent;
-                if (lastItem.content.includes(SEPARATOR)) {
-                  lastItem.content = lastItem.content.split(SEPARATOR)[0].trim();
-                }
-              } else {
-                if (newContent.includes(SEPARATOR)) {
-                  newContent = newContent.split(SEPARATOR)[0].trim();
-                }
-                if (newContent) {
-                  aiMessage.timeline.push({ type: 'thought', content: newContent });
-                }
-              }
-              if (aiMessage.isThoughtExpanded) this.scrollToBottom();
-            }
-            
-            else if (eventType === 'step' && eventData) {
-              aiMessage.hasThought = true;
-              
-              let lastStep = null;
-              for (let i = aiMessage.timeline.length - 1; i >= 0; i--) {
-                if (aiMessage.timeline[i].type === 'step') {
-                  lastStep = aiMessage.timeline[i];
-                  break;
-                }
-              }
-
-              if (lastStep && lastStep.status === 'loading' && eventData.status === 'done') {
-                 lastStep.status = 'done';
-                 if (eventData.title) lastStep.title = eventData.title;
-              } else {
-                 aiMessage.timeline.push({
-                   type: 'step',
-                   status: eventData.status || 'loading',
-                   title: eventData.title
-                 });
-              }
-              if (aiMessage.isThoughtExpanded) this.scrollToBottom();
-            }
-
-            else if (eventType === 'message' && eventData) {
-              if (!aiMessage.isDoneThinking) {
-                aiMessage.isDoneThinking = true;
-                clearInterval(this.timerInterval); // ✅ 停止计时
-                
-                // 思考结束时，自动收起（模仿 Manus/R1 的交互）
-                // 延迟一小会儿收起，让用户看到“完成”的状态
-                setTimeout(() => {
-                  aiMessage.isThoughtExpanded = false; 
-                }, 800);
-              }
-              aiMessage.content += eventData.content;
+            if (event === 'step') {
+              aiMsg.hasThought = true;
+              curBlock = { title: data.title, status: data.status || 'loading', content: '' };
+              aiMsg.timeline.push(curBlock);
               this.scrollToBottom();
-            }
-            
-            else if (eventType === 'title_generated' && eventData) {
-              this.$emit('title-generated', {
-                thread_id: eventData.thread_id,
-                title: eventData.title
-              });
+            } else if (event === 'thought') {
+              aiMsg.hasThought = true;
+              if (!curBlock) {
+                curBlock = { title: '思考中', status: 'loading', content: '' };
+                aiMsg.timeline.push(curBlock);
+              }
+              let text = data.content;
+              if (curBlock.content === '' && text.trim().startsWith('Content:')) text = text.replace(/^\s*Content:\s*/, '');
+              curBlock.content += text;
+              this.scrollToBottom();
+            } else if (event === 'message') {
+              if (!aiMsg.isDoneThinking) {
+                aiMsg.isDoneThinking = true;
+                clearInterval(this.timerInterval);
+                setTimeout(() => { aiMsg.isThoughtExpanded = false; }, 1500);
+              }
+              aiMsg.content += data.content;
+              this.scrollToBottom();
             }
           }
         }
-      } catch (error) { 
-        aiMessage.content += "\n[连接失败]"; 
-        aiMessage.isDoneThinking = true;
-        clearInterval(this.timerInterval);
-      } finally { 
-        this.isStreaming = false; 
-        if (aiMessage) aiMessage.isDoneThinking = true;
-        clearInterval(this.timerInterval); // 确保最后一定停止
-        if (isFirstMessage) {
-          this.$emit('first-message-sent');
-        }
+      } catch (err) {
+        console.error('Stream error:', err);
+      } finally {
+        this.isStreaming = false; aiMsg.isDoneThinking = true; clearInterval(this.timerInterval);
       }
     },
-    scrollToBottom() {
-      this.$nextTick(() => {
-        setTimeout(() => {
-          const container = this.$refs.chatBox;
-          if (container) container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-        }, 100);
-      });
-    }
+    scrollToBottom() { this.$nextTick(() => { const b = this.$refs.chatBox; if (b) b.scrollTo({ top: b.scrollHeight, behavior: 'smooth' }); }); }
   }
 };
 </script>
 
 <style scoped>
-/* ================= 布局样式 (保持不变) ================= */
-.chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: transparent; }
+.chat-container { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; background: #f8f8f7; }
 .chat-header { height: 56px; }
-.chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; z-index: 1; outline: none; }
-.messages-wrapper { width: 80%; max-width: 733px; display: flex; flex-direction: column; }
-.bottom-mask { position: absolute; bottom: 0; left: 0; width: 100%; height: 200px; background: #f8f8f7; z-index: 8; }
-.input-section { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; max-width: 733px; z-index: 10; transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1); outline: none; }
-.input-section.at-bottom { top: calc(100% - 104px); }
-.custom-input-box { position: relative; width: 100%; height: 164px; background: #ffffff; border-radius: 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 20px; box-sizing: border-box; outline: none; }
-textarea { width: 100%; height: calc(100% - 30px); border: none; outline: none; resize: none; font-size: 16px; font-family: 'PingFang SC', sans-serif; color: #333; background: transparent; box-shadow: none; }
-.play-icon { position: absolute; bottom: 20px; right: 20px; width: 24px; height: 24px; cursor: pointer; }
-.message { margin-bottom: 24px; display: flex; width: 100%; }
-.message.user { justify-content: flex-end; }
-.user .message-content { max-width: 85%; background: #f0f0f0; color: #333; padding: 12px 18px; border-radius: 18px; }
-.message.ai { flex-direction: column; align-items: flex-start; } 
-.ai .message-content { width: 100%; max-width: 100%; background: #fff; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02); padding: 12px 18px; border-radius: 18px; border-top-left-radius: 0; line-height: 1.6; font-size: 15px; box-sizing: border-box; }
-.ai-label-container { width: 100%; display: flex; justify-content: flex-start; margin-bottom: -1px; position: relative; z-index: 2; }
-.ai-label { color: #666; font-size: 14px; padding: 12px 12px; font-weight: 500; }
+.chat-box { flex: 1; overflow-y: auto; padding: 20px 40px; padding-bottom: 240px; display: flex; flex-direction: column; align-items: center; }
+.messages-wrapper { width: 85%; max-width: 800px; display: flex; flex-direction: column; }
+.input-section { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); width: 85%; max-width: 800px; }
+.custom-input-box { background: #fff; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 15px 20px; display: flex; align-items: flex-end; }
+textarea { flex: 1; border: none; outline: none; resize: none; height: 60px; font-size: 16px; }
+.play-icon { width: 28px; cursor: pointer; margin-left: 10px; }
+.message { margin-bottom: 25px; width: 100%; display: flex; flex-direction: column; }
+.message.user { align-items: flex-end; }
+.user .message-content { background: #eef2f6; padding: 12px 18px; border-radius: 18px; max-width: 80%; }
+.ai .message-content { background: #fff; padding: 15px 20px; border-radius: 18px; border-top-left-radius: 2px; border: 1px solid #f0f0f0; width: 100%; box-sizing: border-box; }
+.ai-label { font-size: 12px; color: #999; margin-bottom: 5px; font-weight: bold; }
 
-/* ================= ✅ Manus Style 思考过程样式重构 ================= */
+/* 思考过程 */
+.thought-process { background: #fcfdfe; border: 1px solid #eef2f6; border-radius: 12px; margin: 10px 0; }
+.thought-header { padding: 10px 15px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+.thinking-spinner-modern { width: 14px; height: 14px; border: 2px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 10px; }
+.status-title { font-size: 13px; font-weight: 600; color: #475569; }
+.status-timer { margin-left: 8px; font-size: 11px; color: #94a3b8; }
+.timeline-container { position: relative; padding: 15px 10px 15px 25px; }
+.timeline-container::before { content: ''; position: absolute; left: 16px; top: 20px; bottom: 20px; width: 1px; background: #e2e8f0; }
+.thought-node { position: relative; margin-bottom: 15px; }
+.node-header { display: flex; align-items: center; margin-bottom: 5px; }
+.node-icon { position: absolute; left: -14px; background: #fff; padding: 2px 0; }
+.spinner-small { width: 10px; height: 10px; border: 2px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; display: block; }
+.icon-success { color: #10b981; font-size: 12px; font-weight: bold; }
+.node-title { font-size: 13px; font-weight: 600; color: #334155; }
+.node-body { font-size: 13px; color: #64748b; line-height: 1.6; }
 
-/* 1. 容器：更现代的圆角和背景 */
-.thought-process {
-  background-color: #f7f9fb; /* 极淡的冷灰色 */
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  margin: 12px 0 16px 0;
-  overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
-
-/* 2. 呼吸态：当正在思考时，边框有微弱的蓝色脉冲 */
-.thought-process.thinking-active {
-  border-color: #bfdbfe;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.05);
-}
-
-/* 3. 头部：状态栏设计 */
-.thought-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  cursor: pointer;
-  background: transparent;
-  user-select: none;
-  min-height: 24px;
-}
-.thought-header:hover { background-color: rgba(0,0,0,0.02); }
-
-.status-indicator { display: flex; align-items: center; margin-right: 12px; }
-
-/* 现代加载圈 (类似 iOS) */
-.thinking-spinner-modern {
-  width: 16px; height: 16px;
-  border: 2px solid #e2e8f0;
-  border-top-color: #3b82f6; /* 科技蓝 */
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.thinking-icon-done { font-size: 14px; line-height: 1; }
-
-.status-text { flex: 1; display: flex; align-items: center; font-family: 'SF Mono', 'Roboto Mono', monospace; }
-.status-title { font-size: 13px; font-weight: 600; color: #475569; letter-spacing: -0.01em; }
-.status-timer { 
-  margin-left: 10px; font-size: 12px; color: #94a3b8; background: rgba(0,0,0,0.04); 
-  padding: 2px 6px; border-radius: 4px;
-}
-
-.toggle-arrow { color: #cbd5e1; transition: transform 0.3s ease; display: flex; }
-.toggle-arrow.is-expanded { transform: rotate(180deg); }
-
-/* 4. 内容区域：时间轴样式 */
-.thought-body {
-  padding: 8px 16px 16px 16px;
-  border-top: 1px solid #f1f5f9;
-  background: #ffffff; /* 展开后内部偏白 */
-}
-
-.timeline-container {
-  position: relative;
-  padding-left: 8px; /* 给左边框留空间 */
-}
-/* 左侧时间轴线 */
-.timeline-container::before {
-  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
-  width: 2px; background: #f1f5f9; border-radius: 2px;
-}
-
-.timeline-item { position: relative; margin-bottom: 12px; padding-left: 16px; }
-
-/* 步骤卡片 (Search, Code etc.) */
-.step-card {
-  display: inline-flex; align-items: center;
-  background: #fff; border: 1px solid #e2e8f0;
-  padding: 6px 12px; border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-  margin-bottom: 8px;
-}
-.step-status { margin-right: 8px; display: flex; align-items: center; }
-.pulse-dot { 
-  width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; 
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-  animation: pulse 1.5s infinite;
-}
-.check-icon { color: #10b981; font-size: 12px; font-weight: bold; }
-.step-text { font-size: 12px; font-weight: 500; color: #334155; }
-
-/* 思考文本 */
-.thought-segment {
-  font-size: 13px; line-height: 1.7; color: #64748b; /* 思考内容颜色偏淡 */
-}
-
-/* 打字机光标效果：仅在最后一段且正在生成时显示 */
-.thought-segment.is-streaming::after {
-  content: '▋';
-  display: inline-block;
-  color: #3b82f6;
-  font-size: 12px;
-  margin-left: 2px;
-  animation: blink 1s step-end infinite;
-}
-
-/* 动画定义 */
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
-@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-
-/* Markdown 微调 */
-.markdown-body >>> p { margin: 0 0 6px 0; }
-.markdown-body >>> code { font-size: 85%; background: rgba(0,0,0,0.03); }
-
-/* 初始化状态 */
-.preparing-state { display: flex; align-items: center; padding: 4px 0; color: #94a3b8; font-size: 13px; }
-.preparing-text { margin-left: 8px; font-family: monospace; }
-.dot-flashing { position: relative; width: 6px; height: 6px; border-radius: 5px; background-color: #cbd5e1; animation: dot-flashing 1s infinite linear alternate; animation-delay: 0.5s; }
-.dot-flashing::before, .dot-flashing::after { content: ''; display: inline-block; position: absolute; top: 0; width: 6px; height: 6px; border-radius: 5px; background-color: #cbd5e1; animation: dot-flashing 1s infinite alternate; }
-.dot-flashing::before { left: -10px; animation-delay: 0s; }
-.dot-flashing::after { left: 10px; animation-delay: 1s; }
-@keyframes dot-flashing { 0% { background-color: #cbd5e1; } 50%, 100% { background-color: #94a3b8; } }
-
-/* 通用样式 */
-.loading-tip { text-align: center; color: #bbb; font-size: 13px; padding: 20px; }
-.scroll-anchor { height: 1px; width: 100%; flex-shrink: 0; }
+.toggle-arrow { margin-left: auto; transition: transform 0.3s; }
+.toggle-arrow.is-expanded { transform: rotate(180deg); }
+.is-streaming::after { content: '▋'; animation: blink 1s step-end infinite; color: #3b82f6; }
+@keyframes blink { 50% { opacity: 0; } }
 </style>
